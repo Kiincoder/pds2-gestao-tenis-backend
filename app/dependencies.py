@@ -10,12 +10,21 @@ from sqlalchemy.orm import Session
 
 from app.core.passwords import PasswordVerifier
 from app.core.tokens import TokenService
-from app.domain.entities import AuthenticatedSession
+from app.domain.entities import AuthenticatedSession, User
 from app.domain.exceptions import AuthenticationError
+from app.handlers.administrator import RequireAdministratorHandler
 from app.handlers.authenticate_session import AuthenticateSessionHandler
 from app.handlers.login_user import LoginUserHandler
 from app.handlers.logout_user import LogoutUserHandler
+from app.handlers.members import (
+    CreateMemberHandler,
+    DeleteMemberHandler,
+    GetMemberHandler,
+    ListMembersHandler,
+    UpdateMemberHandler,
+)
 from app.handlers.register_user import RegisterUserHandler
+from app.repositories.sqlalchemy_members import SqlAlchemyMemberRepository
 from app.repositories.sqlalchemy_sessions import SqlAlchemySessionRepository
 from app.repositories.sqlalchemy_users import SqlAlchemyUserRepository
 
@@ -76,3 +85,45 @@ def get_logout_handler(
     session: Annotated[Session, Depends(get_session)],
 ) -> LogoutUserHandler:
     return LogoutUserHandler(SqlAlchemySessionRepository(session))
+
+
+def require_administrator(
+    context: Annotated[AuthenticatedSession, Depends(get_current_session)],
+) -> User:
+    return RequireAdministratorHandler().handle(context)
+
+
+def get_member_repository(
+    session: Annotated[Session, Depends(get_session)],
+) -> SqlAlchemyMemberRepository:
+    return SqlAlchemyMemberRepository(session)
+
+
+def get_create_member_handler(
+    members: Annotated[SqlAlchemyMemberRepository, Depends(get_member_repository)],
+) -> CreateMemberHandler:
+    return CreateMemberHandler(members)
+
+
+def get_list_members_handler(
+    members: Annotated[SqlAlchemyMemberRepository, Depends(get_member_repository)],
+) -> ListMembersHandler:
+    return ListMembersHandler(members)
+
+
+def get_member_handler(
+    members: Annotated[SqlAlchemyMemberRepository, Depends(get_member_repository)],
+) -> GetMemberHandler:
+    return GetMemberHandler(members)
+
+
+def get_update_member_handler(
+    members: Annotated[SqlAlchemyMemberRepository, Depends(get_member_repository)],
+) -> UpdateMemberHandler:
+    return UpdateMemberHandler(members)
+
+
+def get_delete_member_handler(
+    members: Annotated[SqlAlchemyMemberRepository, Depends(get_member_repository)],
+) -> DeleteMemberHandler:
+    return DeleteMemberHandler(members)

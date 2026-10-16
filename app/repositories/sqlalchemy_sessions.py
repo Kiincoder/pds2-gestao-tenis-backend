@@ -29,9 +29,8 @@ class SqlAlchemySessionRepository:
         )
         if record is None:
             return None
-        return AuthenticatedSession(
-            User(record.id, record.name, record.email, record.created_at), token_hash
-        )
+        user = User(record.id, record.name, record.email, record.created_at, record.is_admin)
+        return AuthenticatedSession(user, token_hash)
 
     def revoke(self, token_hash: str, now: datetime) -> bool:
         revoked_id = self.session.scalar(

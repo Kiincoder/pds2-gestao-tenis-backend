@@ -8,10 +8,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.controllers.auth import router
+from app.controllers.members import router as members_router
 from app.controllers.sessions import router as sessions_router
 from app.core.config import Settings
 from app.core.rate_limit import RegistrationRateLimiter
-from app.domain.exceptions import AuthenticationError, DuplicateEmailError, InvalidCredentialsError
+from app.domain.exceptions import (
+    AuthenticationError,
+    DuplicateEmailError,
+    DuplicateMemberEmailError,
+    ForbiddenError,
+    InvalidCredentialsError,
+    MemberNotFoundError,
+)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -28,8 +36,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(
         title="Clube de Tênis API",
-        version="0.2.0",
-        description="US01 — criação de conta. US02 — login e logout. US03 será entregue depois.",
+        version="0.3.0",
+        description="US01 — cadastro. US02 — login/logout. US03 — membros gerenciados por admin.",
         lifespan=lifespan,
     )
     application.state.settings = settings
@@ -59,7 +67,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
         if response is None:
             response = await call_next(request)
-        if path in {"/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/me"}:
+        if path in {"/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/auth/me"} or (
+            path == "/api/v1/members" or path.startswith("/api/v1/members/")
+        ):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
         return response
@@ -85,6 +95,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "message": "Este e-mail já está cadastrado.",
                 "errors": {"email": ["Este e-mail já está cadastrado."]},
             },
+        )
+
+    @application.exception_handler(ForbiddenError)
+    async def forbidden(request: Request, error: ForbiddenError) -> JSONResponse:
+        return JSONResponse(
+            status_code=403, content={"message": "Acesso restrito a administradores."}
+        )
+
+    @application.exception_handler(MemberNotFoundError)
+    async def member_not_found(request: Request, error: MemberNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"message": "Membro não encontrado."})
+
+    @application.exception_handler(DuplicateMemberEmailError)
+    async def duplicate_member(request: Request, error: DuplicateMemberEmailError) -> JSONResponse:
+        message = "Este e-mail já está cadastrado para outro membro."
+        return JSONResponse(
+            status_code=409, content={"message": message, "errors": {"email": [message]}}
         )
 
     @application.exception_handler(RequestValidationError)
@@ -117,6 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(router)
     application.include_router(sessions_router)
+    application.include_router(members_router)
     return application
 
 

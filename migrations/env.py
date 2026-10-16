@@ -5,7 +5,11 @@ from sqlalchemy import create_engine
 
 from app.core.config import Settings
 from app.db.base import Base
-from app.db.models import SessionModel, UserModel  # noqa: F401 -- registra os modelos no metadata
+from app.db.models import (  # noqa: F401 -- registra os modelos no metadata
+    MemberModel,
+    SessionModel,
+    UserModel,
+)
 
 config = context.config
 if config.config_file_name is not None:
