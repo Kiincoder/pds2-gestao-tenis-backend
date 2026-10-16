@@ -1,0 +1,80 @@
+name: clube-tenis
+
+x-app: &app
+  build: .
+  working_dir: /app
+  volumes:
+    - .:/app
+
+x-database-env: &database-env
+  DB_HOST: db
+  DB_PORT: 5432
+  DB_DATABASE: ${DB_DATABASE:-clube_tenis}
+  DB_USERNAME: ${DB_USERNAME:-clube}
+  DB_PASSWORD: ${DB_PASSWORD:-clube_local}
+
+services:
+  app:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      <<: *database-env
+      REGISTRATION_RATE_LIMIT: ${REGISTRATION_RATE_LIMIT:-5}
+      REGISTRATION_RATE_WINDOW_SECONDS: ${REGISTRATION_RATE_WINDOW_SECONDS:-60}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    environment: *database-env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-clube_tenis}
+      POSTGRES_USER: ${DB_USERNAME:-clube}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-clube_local}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  test:
+    <<: *app
+    profiles: [test]
+    command: ["pytest"]
+    environment:
+      APP_ENV: testing
+      TEST_DATABASE_URL: postgresql+psycopg://clube_test:teste_local@test-db:5432/clube_tenis_test
+    depends_on:
+      test-db:
+        condition: service_healthy
+
+  test-db:
+    image: postgres:17-bookworm
+    profiles: [test]
+    environment:
+      POSTGRES_DB: clube_tenis_test
+      POSTGRES_USER: clube_test
+      POSTGRES_PASSWORD: teste_local
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clube_test -d clube_tenis_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres_data:
