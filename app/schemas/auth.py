@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -67,4 +68,27 @@ class ValidationErrorResponse(BaseModel):
 
 
 class RateLimitResponse(BaseModel):
+    message: str
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    email: EmailStr = Field(max_length=254, examples=["maria@example.com"])
+    password: SecretStr = Field(min_length=1, max_length=128)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
+
+
+class LoginResponse(BaseModel):
+    access_token: str = Field(repr=False)
+    token_type: Literal["bearer"] = "bearer"
+    expires_at: datetime
+    user: UserResponse
+
+
+class AuthenticationErrorResponse(BaseModel):
     message: str

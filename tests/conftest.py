@@ -11,7 +11,18 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.dependencies import get_register_handler, get_session
+from app.dependencies import (
+    get_create_member_handler,
+    get_current_session,
+    get_delete_member_handler,
+    get_list_members_handler,
+    get_login_handler,
+    get_logout_handler,
+    get_member_handler,
+    get_register_handler,
+    get_session,
+    get_update_member_handler,
+)
 from app.main import create_app
 
 
@@ -41,6 +52,85 @@ def http_client():
     application.dependency_overrides[get_register_handler] = lambda: handler
     with TestClient(application) as client:
         yield client, handler
+
+
+@pytest.fixture
+def auth_http_client():
+    from datetime import UTC, datetime, timedelta
+
+    from app.core.tokens import TokenService
+    from app.domain.entities import LoginResult, User
+
+    application = create_app(
+        Settings(_env_file=None, login_rate_limit=10, login_rate_window_seconds=60)
+    )
+    user = User(1, "Maria Silva", "maria@example.com", datetime.now(UTC))
+    login_handler = Mock()
+    logout_handler = Mock()
+    login_handler.handle.return_value = LoginResult(
+        user, TokenService().issue(), datetime.now(UTC) + timedelta(hours=1)
+    )
+    application.dependency_overrides[get_login_handler] = lambda: login_handler
+    application.dependency_overrides[get_logout_handler] = lambda: logout_handler
+    with TestClient(application) as client:
+        yield client, login_handler, logout_handler, application
+
+
+@pytest.fixture
+def member_http_client():
+    from datetime import UTC, datetime
+
+    from app.domain.entities import (
+        AuthenticatedSession,
+        Member,
+        MemberPage,
+        MemberStatus,
+        User,
+    )
+
+    application = create_app(Settings(_env_file=None))
+    now = datetime.now(UTC)
+    admin = User(1, "Admin", "admin@example.com", now, is_admin=True)
+    member = Member(1, "Maria Silva", "maria@example.com", None, MemberStatus.ACTIVE, now, now)
+    handlers = {name: Mock() for name in ["create", "list", "get", "update", "delete"]}
+    for name in ["create", "get", "update"]:
+        handlers[name].handle.return_value = member
+    handlers["list"].handle.return_value = MemberPage((member,), 1, 1, 20)
+
+    def dependency_override(handler):
+        return lambda: handler
+
+    for dependency, name in [
+        (get_create_member_handler, "create"),
+        (get_list_members_handler, "list"),
+        (get_member_handler, "get"),
+        (get_update_member_handler, "update"),
+        (get_delete_member_handler, "delete"),
+    ]:
+        application.dependency_overrides[dependency] = dependency_override(handlers[name])
+    context = AuthenticatedSession(admin, "hash")
+    application.dependency_overrides[get_current_session] = lambda: context
+    application.dependency_overrides[get_session] = lambda: None
+    with TestClient(application) as client:
+        yield client, handlers, application
+
+
+@pytest.fixture
+def member_admin_client(database_client, db_session, registration_payload):
+    from app.handlers.administrator import PromoteAdministratorHandler
+    from app.repositories.sqlalchemy_users import SqlAlchemyUserRepository
+
+    created = database_client.post("/api/v1/auth/register", json=registration_payload)
+    assert created.status_code == 201
+    PromoteAdministratorHandler(SqlAlchemyUserRepository(db_session)).handle(
+        registration_payload["email"]
+    )
+    login = database_client.post(
+        "/api/v1/auth/login",
+        json={"email": registration_payload["email"], "password": registration_payload["password"]},
+    )
+    assert login.status_code == 200
+    return database_client, {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 @pytest.fixture(scope="session")

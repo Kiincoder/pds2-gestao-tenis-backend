@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     db_password: SecretStr = SecretStr("clube_local")
     registration_rate_limit: int = Field(default=5, ge=1)
     registration_rate_window_seconds: int = Field(default=60, ge=1)
+    login_rate_limit: int = Field(default=10, ge=1)
+    login_rate_window_seconds: int = Field(default=60, ge=1)
+    access_token_ttl_minutes: int = Field(default=60, ge=1, le=1440)
 
     @property
     def database_url(self) -> URL:
