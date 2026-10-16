@@ -11,7 +11,12 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.dependencies import get_register_handler, get_session
+from app.dependencies import (
+    get_login_handler,
+    get_logout_handler,
+    get_register_handler,
+    get_session,
+)
 from app.main import create_app
 
 
@@ -41,6 +46,28 @@ def http_client():
     application.dependency_overrides[get_register_handler] = lambda: handler
     with TestClient(application) as client:
         yield client, handler
+
+
+@pytest.fixture
+def auth_http_client():
+    from datetime import UTC, datetime, timedelta
+
+    from app.core.tokens import TokenService
+    from app.domain.entities import LoginResult, User
+
+    application = create_app(
+        Settings(_env_file=None, login_rate_limit=10, login_rate_window_seconds=60)
+    )
+    user = User(1, "Maria Silva", "maria@example.com", datetime.now(UTC))
+    login_handler = Mock()
+    logout_handler = Mock()
+    login_handler.handle.return_value = LoginResult(
+        user, TokenService().issue(), datetime.now(UTC) + timedelta(hours=1)
+    )
+    application.dependency_overrides[get_login_handler] = lambda: login_handler
+    application.dependency_overrides[get_logout_handler] = lambda: logout_handler
+    with TestClient(application) as client:
+        yield client, login_handler, logout_handler, application
 
 
 @pytest.fixture(scope="session")
